@@ -24,8 +24,15 @@ ASSET_TARGETS = (
     "linux-aarch64",
     "macos-x86_64",
     "macos-aarch64",
+    "windows-x86_64",
+    "windows-aarch64",
 )
-EXPECTED_ASSET_NAMES = {target: f"herdr-{target}" for target in ASSET_TARGETS}
+EXPECTED_ASSET_NAMES = {}
+for target in ASSET_TARGETS:
+    name = f"herdr-{target}"
+    if target.startswith("windows-"):
+        name += ".exe"
+    EXPECTED_ASSET_NAMES[target] = name
 
 
 @dataclass(frozen=True)

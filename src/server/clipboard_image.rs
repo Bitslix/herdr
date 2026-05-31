@@ -77,8 +77,18 @@ fn sanitize_extension(extension: &str) -> &'static str {
 }
 
 fn staging_dir() -> PathBuf {
-    let user_id = unsafe { libc::geteuid() };
-    std::env::temp_dir().join(format!("herdr-clipboard-images-{user_id}"))
+    let tag = staging_tag();
+    std::env::temp_dir().join(format!("herdr-clipboard-images-{tag}"))
+}
+
+#[cfg(unix)]
+fn staging_tag() -> String {
+    unsafe { libc::geteuid() }.to_string()
+}
+
+#[cfg(windows)]
+fn staging_tag() -> String {
+    std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string())
 }
 
 fn ensure_staging_dir() -> io::Result<PathBuf> {

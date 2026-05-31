@@ -96,8 +96,7 @@ fn run_player(path: &Path) -> Result<Output, String> {
             .output()
             .map_err(|e| format!("no audio player available: {e}"))
     } else if cfg!(target_os = "windows") {
-        // No built-in mp3 player on Windows; silently no-op.
-        Err("audio playback not supported on Windows".to_string())
+        run_windows_player(path)
     } else {
         run_linux_player(path)
     }
@@ -142,6 +141,23 @@ fn linux_audio_players() -> &'static [AudioPlayer] {
             args: &["--no-video", "--really-quiet"],
         },
     ]
+}
+
+fn run_windows_player(path: &Path) -> Result<Output, String> {
+    let script = format!(
+        "$wm = New-Object -ComObject WMPlayer.OCX; \
+         $wm.settings.autoStart = $true; \
+         $wm.URL = '{}'; \
+         $wm.controls.play(); \
+         Start-Sleep -Seconds 3; \
+         $wm.close()",
+        path.display().to_string().replace('\'', "''")
+    );
+
+    Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .output()
+        .map_err(|e| format!("no audio player available: {e}"))
 }
 
 fn run_linux_player(path: &Path) -> Result<Output, String> {

@@ -80,6 +80,8 @@ class ChangelogScriptTests(unittest.TestCase):
                 "linux-aarch64": "https://github.com/ogulcancelik/herdr/releases/download/v0.1.1/herdr-linux-aarch64",
                 "macos-x86_64": "https://github.com/ogulcancelik/herdr/releases/download/v0.1.1/herdr-macos-x86_64",
                 "macos-aarch64": "https://github.com/ogulcancelik/herdr/releases/download/v0.1.1/herdr-macos-aarch64",
+                "windows-x86_64": "https://github.com/ogulcancelik/herdr/releases/download/v0.1.1/herdr-windows-x86_64.exe",
+                "windows-aarch64": "https://github.com/ogulcancelik/herdr/releases/download/v0.1.1/herdr-windows-aarch64.exe",
             },
         )
         self.assertEqual(manifest["releases"]["0.1.1"]["assets"], manifest["assets"])
@@ -292,6 +294,8 @@ class ChangelogScriptTests(unittest.TestCase):
                     {"name": "herdr-linux-aarch64", "url": "https://example.com/linux-aarch64"},
                     {"name": "herdr-macos-x86_64", "url": "https://example.com/macos-x86_64"},
                     {"name": "herdr-macos-aarch64", "url": "https://example.com/macos-aarch64"},
+                    {"name": "herdr-windows-x86_64.exe", "url": "https://example.com/windows-x86_64"},
+                    {"name": "herdr-windows-aarch64.exe", "url": "https://example.com/windows-aarch64"},
                 ],
             },
             "0.1.1",
@@ -308,6 +312,8 @@ class ChangelogScriptTests(unittest.TestCase):
                     "linux-aarch64": "https://example.com/linux-aarch64",
                     "macos-x86_64": "https://example.com/macos-x86_64",
                     "macos-aarch64": "https://example.com/macos-aarch64",
+                    "windows-x86_64": "https://example.com/windows-x86_64",
+                    "windows-aarch64": "https://example.com/windows-aarch64",
                 },
             },
         )
@@ -324,6 +330,8 @@ class ChangelogScriptTests(unittest.TestCase):
                     {"name": "herdr-linux-aarch64", "url": "https://example.com/linux-aarch64"},
                     {"name": "herdr-macos-x86_64", "url": "https://example.com/macos-x86_64"},
                     {"name": "herdr-macos-aarch64", "url": "https://example.com/macos-aarch64"},
+                    {"name": "herdr-windows-x86_64.exe", "url": "https://example.com/windows-x86_64"},
+                    {"name": "herdr-windows-aarch64.exe", "url": "https://example.com/windows-aarch64"},
                 ],
             },
             "0.1.1",
@@ -333,7 +341,7 @@ class ChangelogScriptTests(unittest.TestCase):
         self.assertEqual(manifest["protocol"], 42)
 
     def test_manifest_from_release_payload_rejects_missing_asset(self) -> None:
-        with self.assertRaisesRegex(ChangelogError, "missing asset herdr-macos-aarch64"):
+        with self.assertRaisesRegex(ChangelogError, "missing asset herdr-windows-x86_64.exe"):
             manifest_from_release_payload(
                 {
                     "tagName": "v0.1.1",
@@ -344,6 +352,8 @@ class ChangelogScriptTests(unittest.TestCase):
                         {"name": "herdr-linux-x86_64", "url": "https://example.com/linux-x86_64"},
                         {"name": "herdr-linux-aarch64", "url": "https://example.com/linux-aarch64"},
                         {"name": "herdr-macos-x86_64", "url": "https://example.com/macos-x86_64"},
+                        {"name": "herdr-macos-aarch64", "url": "https://example.com/macos-aarch64"},
+                        {"name": "herdr-windows-aarch64.exe", "url": "https://example.com/windows-aarch64"},
                     ],
                 },
                 "0.1.1",
@@ -360,7 +370,7 @@ class ChangelogScriptTests(unittest.TestCase):
         ensure_manifest_is_outdated({"version": "0.1.0"}, "0.1.1")
 
     def test_canonicalize_manifest_requires_all_asset_targets(self) -> None:
-        with self.assertRaisesRegex(ChangelogError, "missing asset URL for macos-aarch64"):
+        with self.assertRaisesRegex(ChangelogError, "missing asset URL for windows-x86_64, windows-aarch64"):
             canonicalize_manifest(
                 {
                     "version": "0.1.1",
@@ -370,6 +380,7 @@ class ChangelogScriptTests(unittest.TestCase):
                         "linux-x86_64": "https://example.com/linux-x86_64",
                         "linux-aarch64": "https://example.com/linux-aarch64",
                         "macos-x86_64": "https://example.com/macos-x86_64",
+                        "macos-aarch64": "https://example.com/macos-aarch64",
                     },
                 },
                 "test manifest",
@@ -385,6 +396,8 @@ class ChangelogScriptTests(unittest.TestCase):
                 "linux-aarch64": "https://example.com/linux-aarch64",
                 "macos-x86_64": "https://example.com/macos-x86_64",
                 "macos-aarch64": "https://example.com/macos-aarch64",
+                "windows-x86_64": "https://example.com/windows-x86_64",
+                "windows-aarch64": "https://example.com/windows-aarch64",
             },
         }
         expected = {
@@ -396,6 +409,8 @@ class ChangelogScriptTests(unittest.TestCase):
                 "linux-aarch64": "https://example.com/linux-aarch64",
                 "macos-x86_64": "https://example.com/macos-x86_64",
                 "macos-aarch64": "https://example.com/macos-aarch64",
+                "windows-x86_64": "https://example.com/windows-x86_64",
+                "windows-aarch64": "https://example.com/windows-aarch64",
             },
         }
 
@@ -450,6 +465,8 @@ class ChangelogScriptTests(unittest.TestCase):
                         "linux-aarch64": "https://example.com/linux-aarch64",
                         "macos-x86_64": "https://example.com/macos-x86_64",
                         "macos-aarch64": "https://example.com/macos-aarch64",
+                        "windows-x86_64": "https://example.com/windows-x86_64",
+                        "windows-aarch64": "https://example.com/windows-aarch64",
                     },
                 },
                 {
@@ -461,6 +478,8 @@ class ChangelogScriptTests(unittest.TestCase):
                         "linux-aarch64": "https://example.com/linux-aarch64",
                         "macos-x86_64": "https://example.com/macos-x86_64",
                         "macos-aarch64": "https://example.com/macos-aarch64",
+                        "windows-x86_64": "https://example.com/windows-x86_64",
+                        "windows-aarch64": "https://example.com/windows-aarch64",
                     },
                 },
                 "test manifest",

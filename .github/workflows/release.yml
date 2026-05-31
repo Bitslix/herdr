@@ -60,6 +60,12 @@ jobs:
             name: herdr-macos-aarch64
             libghostty_vt_optimize: ReleaseFast
             libghostty_vt_simd: 'true'
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: herdr-windows-x86_64
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            name: herdr-windows-aarch64
 
     runs-on: ${{ matrix.os }}
     env:
@@ -123,13 +129,23 @@ jobs:
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Rename binary
-        run: cp target/${{ matrix.target }}/release/herdr ${{ matrix.name }}
+        run: |
+          src="target/${{ matrix.target }}/release/herdr"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            src="${src}.exe"
+          fi
+          dst="${{ matrix.name }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            dst="${dst}.exe"
+          fi
+          cp "$src" "$dst"
+          echo "ASSET_FILE=$dst" >> "$GITHUB_ENV"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
-          path: ${{ matrix.name }}
+          path: ${{ env.ASSET_FILE }}
 
   validate-release-inputs:
     runs-on: ubuntu-latest
@@ -169,6 +185,8 @@ jobs:
             herdr-linux-aarch64/herdr-linux-aarch64
             herdr-macos-x86_64/herdr-macos-x86_64
             herdr-macos-aarch64/herdr-macos-aarch64
+            herdr-windows-x86_64/herdr-windows-x86_64.exe
+            herdr-windows-aarch64/herdr-windows-aarch64.exe
           body_path: RELEASE_NOTES.md
 
   close-released-issues:

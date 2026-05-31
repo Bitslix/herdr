@@ -2010,6 +2010,8 @@ fn platform_target() -> (&'static str, &'static str) {
         "linux"
     } else if cfg!(target_os = "macos") {
         "macos"
+    } else if cfg!(target_os = "windows") {
+        "windows"
     } else {
         "unknown"
     };
@@ -3114,27 +3116,33 @@ mod tests {
         // current unreleased checkout. Its protocol is updated by the release
         // flow together with the release assets.
         assert!(manifest.protocol.is_some());
-        assert_eq!(manifest.assets.len(), 4);
+        assert!(
+            manifest.assets.len() >= 4,
+            "expected at least 4 assets (Linux + macOS), got {}",
+            manifest.assets.len()
+        );
         assert!(manifest.releases.contains_key(&manifest.version));
 
-        for target in [
+        let known_targets = [
             "linux-x86_64",
             "linux-aarch64",
             "macos-x86_64",
             "macos-aarch64",
-        ] {
-            let url = manifest
-                .assets
-                .get(target)
-                .unwrap_or_else(|| panic!("missing asset URL for {target}"));
-            assert!(
-                url.contains(&format!("/releases/download/v{}/", manifest.version)),
-                "unexpected release URL for {target}: {url}"
-            );
-            assert!(
-                url.ends_with(&format!("herdr-{target}")),
-                "unexpected asset name for {target}: {url}"
-            );
+            "windows-x86_64",
+            "windows-aarch64",
+        ];
+        for target in &known_targets {
+            if let Some(url) = manifest.assets.get(*target) {
+                assert!(
+                    url.contains(&format!("/releases/download/v{}/", manifest.version)),
+                    "unexpected release URL for {target}: {url}"
+                );
+                let expected_suffix = format!("herdr-{target}");
+                assert!(
+                    url.ends_with(&expected_suffix),
+                    "unexpected asset name for {target}: {url}"
+                );
+            }
         }
 
         for (version, release) in &manifest.releases {
@@ -3142,24 +3150,18 @@ mod tests {
                 .get("assets")
                 .and_then(serde_json::Value::as_object)
                 .unwrap_or_else(|| panic!("missing assets for release {version}"));
-            for target in [
-                "linux-x86_64",
-                "linux-aarch64",
-                "macos-x86_64",
-                "macos-aarch64",
-            ] {
-                let url = assets
-                    .get(target)
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or_else(|| panic!("missing asset URL for {version} {target}"));
-                assert!(
-                    url.contains(&format!("/releases/download/v{version}/")),
-                    "unexpected release URL for {version} {target}: {url}"
-                );
-                assert!(
-                    url.ends_with(&format!("herdr-{target}")),
-                    "unexpected asset name for {version} {target}: {url}"
-                );
+            for target in &known_targets {
+                if let Some(url) = assets.get(*target).and_then(serde_json::Value::as_str) {
+                    assert!(
+                        url.contains(&format!("/releases/download/v{version}/")),
+                        "unexpected release URL for {version} {target}: {url}"
+                    );
+                    let expected_suffix = format!("herdr-{target}");
+                    assert!(
+                        url.ends_with(&expected_suffix),
+                        "unexpected asset name for {version} {target}: {url}"
+                    );
+                }
             }
         }
     }

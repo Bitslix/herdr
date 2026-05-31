@@ -52,5 +52,14 @@ jobs:
         with:
           cache-bin: false
 
-      - name: Run checks
+      - name: Run checks (Unix)
+        if: runner.os != 'Windows'
         run: just ci
+
+      - name: Run checks (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo nextest run --locked --status-level fail --final-status-level fail --failure-output final --success-output never

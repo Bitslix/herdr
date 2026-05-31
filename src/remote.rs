@@ -253,6 +253,8 @@ impl RemotePlatform {
             "linux"
         } else if cfg!(target_os = "macos") {
             "macos"
+        } else if cfg!(target_os = "windows") {
+            "windows"
         } else {
             "unknown"
         };
