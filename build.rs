@@ -11,6 +11,8 @@ fn zig_target(target: &str) -> &str {
         "aarch64-unknown-linux-musl" => "aarch64-linux-musl",
         "x86_64-apple-darwin" => "x86_64-macos",
         "aarch64-apple-darwin" => "aarch64-macos",
+        "x86_64-pc-windows-msvc" => "x86_64-windows",
+        "aarch64-pc-windows-msvc" => "aarch64-windows",
         other => panic!("unsupported target for libghostty-vt build: {other}"),
     }
 }

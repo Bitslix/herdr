@@ -13,6 +13,12 @@ pub fn app_dir_name() -> &'static str {
 }
 
 pub fn config_dir() -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Ok(dir) = std::env::var("APPDATA") {
+            return PathBuf::from(dir).join(app_dir_name());
+        }
+    }
     if let Ok(dir) = std::env::var("XDG_CONFIG_HOME") {
         PathBuf::from(dir).join(app_dir_name())
     } else if let Ok(home) = std::env::var("HOME") {
@@ -23,6 +29,12 @@ pub fn config_dir() -> PathBuf {
 }
 
 pub fn state_dir() -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Ok(dir) = std::env::var("LOCALAPPDATA") {
+            return PathBuf::from(dir).join(app_dir_name());
+        }
+    }
     if let Ok(dir) = std::env::var("XDG_STATE_HOME") {
         PathBuf::from(dir).join(app_dir_name())
     } else if let Ok(home) = std::env::var("HOME") {

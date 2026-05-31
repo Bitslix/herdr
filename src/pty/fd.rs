@@ -107,3 +107,53 @@ pub(crate) fn resize_pty_fd(
     }
     Ok(())
 }
+
+// Windows stubs — allow compilation, return unsupported errors at runtime.
+#[cfg(windows)]
+pub(crate) fn duplicate_fd() -> std::io::Result<std::os::windows::io::RawHandle> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "fd duplication not supported on Windows",
+    ))
+}
+
+#[cfg(windows)]
+pub(crate) fn duplicate_cloexec_fd() -> std::io::Result<std::os::windows::io::RawHandle> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "fd duplication not supported on Windows",
+    ))
+}
+
+#[cfg(windows)]
+pub(crate) fn poll_read_ready(
+    _timeout_ms: i32,
+) -> std::io::Result<bool> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "poll not supported on Windows",
+    ))
+}
+
+#[cfg(windows)]
+pub(crate) fn poll_write_ready(
+    _timeout_ms: i32,
+) -> std::io::Result<bool> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "poll not supported on Windows",
+    ))
+}
+
+#[cfg(windows)]
+pub(crate) fn resize_pty_fd(
+    _rows: u16,
+    _cols: u16,
+    _cell_width_px: u32,
+    _cell_height_px: u32,
+) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "pty resize not supported on Windows",
+    ))
+}

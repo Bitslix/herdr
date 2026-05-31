@@ -1,10 +1,17 @@
+pub mod compat;
+
 use std::fs;
 use std::io;
-use std::os::unix::fs::MetadataExt;
-use std::os::unix::fs::PermissionsExt;
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 
+use crate::ipc::compat::UnixStream;
+
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
+#[cfg(unix)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct SocketFileIdentity {
     dev: u64,
@@ -46,6 +53,7 @@ pub(crate) fn prepare_socket_path(
     Ok(())
 }
 
+#[cfg(unix)]
 pub(crate) fn socket_file_identity(path: &Path) -> io::Result<SocketFileIdentity> {
     let metadata = fs::metadata(path)?;
     Ok(SocketFileIdentity {
@@ -54,6 +62,15 @@ pub(crate) fn socket_file_identity(path: &Path) -> io::Result<SocketFileIdentity
     })
 }
 
+#[cfg(not(unix))]
+pub(crate) fn socket_file_identity(_path: &Path) -> io::Result<SocketFileIdentity> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "socket file identity is not supported on this platform",
+    ))
+}
+
+#[cfg(unix)]
 pub(crate) fn remove_socket_file_if_owned(
     path: &Path,
     identity: SocketFileIdentity,
@@ -75,8 +92,26 @@ pub(crate) fn remove_socket_file_if_owned(
     }
 }
 
+#[cfg(not(unix))]
+pub(crate) fn remove_socket_file_if_owned(
+    path: &Path,
+    _identity: SocketFileIdentity,
+) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
+#[cfg(unix)]
 pub(crate) fn restrict_socket_permissions(path: &Path, mode: u32) -> io::Result<()> {
     let mut permissions = fs::metadata(path)?.permissions();
     permissions.set_mode(mode);
     fs::set_permissions(path, permissions)
+}
+
+#[cfg(not(unix))]
+pub(crate) fn restrict_socket_permissions(_path: &Path, _mode: u32) -> io::Result<()> {
+    Ok(())
 }

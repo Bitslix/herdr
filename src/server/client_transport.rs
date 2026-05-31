@@ -5,7 +5,7 @@
 //! `HeadlessServer`.
 
 use std::io::{self, Write};
-use std::os::unix::net::UnixStream;
+use crate::ipc::compat::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;

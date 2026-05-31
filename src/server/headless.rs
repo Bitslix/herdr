@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 use std::io;
-use std::os::unix::net::UnixListener;
+use crate::ipc::compat::UnixListener;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -2836,7 +2836,7 @@ fn run_handoff_import_server(socket_path: &Path, token: &str) -> io::Result<()> 
 
 #[cfg(unix)]
 fn wait_for_old_public_sockets_to_close(timeout: Duration) -> io::Result<()> {
-    use std::os::unix::net::UnixStream;
+    use crate::ipc::compat::UnixStream;
 
     let deadline = Instant::now() + timeout;
     let api_socket = api::socket_path();

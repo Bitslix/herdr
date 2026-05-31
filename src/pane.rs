@@ -560,6 +560,8 @@ pub struct PaneRuntime {
 enum PaneRuntimeIo {
     #[cfg(unix)]
     Actor(PtyIoActorHandle),
+    #[cfg(windows)]
+    Windows,
     #[cfg(test)]
     TestChannel {
         sender: mpsc::Sender<Bytes>,
@@ -572,6 +574,8 @@ impl PaneRuntimeIo {
         match self {
             #[cfg(unix)]
             PaneRuntimeIo::Actor(actor) => actor.shutdown(),
+            #[cfg(windows)]
+            PaneRuntimeIo::Windows => {}
             #[cfg(test)]
             PaneRuntimeIo::TestChannel { .. } => {}
         }
@@ -636,6 +640,8 @@ impl PaneRuntimeIo {
             PaneRuntimeIo::Actor(actor) => {
                 actor.resize(rows, cols, cell_width_px, cell_height_px);
             }
+            #[cfg(windows)]
+            PaneRuntimeIo::Windows => {}
             #[cfg(test)]
             PaneRuntimeIo::TestChannel { resize_tx, .. } => {
                 let _ = resize_tx.send((rows, cols, cell_width_px, cell_height_px));
@@ -655,6 +661,8 @@ impl PaneRuntimeIo {
             PaneRuntimeIo::Actor(actor) => {
                 actor.nudge_child_redraw_after_handoff(rows, cols, cell_width_px, cell_height_px);
             }
+            #[cfg(windows)]
+            PaneRuntimeIo::Windows => {}
             #[cfg(test)]
             PaneRuntimeIo::TestChannel { .. } => {}
         }
@@ -664,6 +672,11 @@ impl PaneRuntimeIo {
         match self {
             #[cfg(unix)]
             PaneRuntimeIo::Actor(actor) => actor.write_user_input(bytes).await,
+            #[cfg(windows)]
+            PaneRuntimeIo::Windows => {
+                let _ = bytes;
+                Ok(())
+            }
             #[cfg(test)]
             PaneRuntimeIo::TestChannel { sender, .. } => sender.send(bytes).await,
         }
@@ -673,6 +686,11 @@ impl PaneRuntimeIo {
         match self {
             #[cfg(unix)]
             PaneRuntimeIo::Actor(actor) => actor.try_write_user_input(bytes),
+            #[cfg(windows)]
+            PaneRuntimeIo::Windows => {
+                let _ = bytes;
+                Ok(())
+            }
             #[cfg(test)]
             PaneRuntimeIo::TestChannel { sender, .. } => sender.try_send(bytes),
         }
@@ -1330,6 +1348,18 @@ impl PaneRuntime {
         spawn_error_message: &'static str,
         initial_state: SpawnInitialState<'_>,
     ) -> std::io::Result<Self> {
+        #[cfg(not(unix))]
+        {
+            let _ = (pane_id, rows, cols, scrollback_limit_bytes, host_terminal_theme,
+                     events, render_notify, render_dirty, cmd, spawn_error_message, initial_state);
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "pty spawning is not supported on this platform",
+            ));
+        }
+
+        #[cfg(unix)]
+        {
         crate::logging::pane_spawn_started(pane_id.raw(), rows, cols, scrollback_limit_bytes);
 
         let (response_tx, _response_rx) = mpsc::channel::<Bytes>(1);
@@ -1410,7 +1440,7 @@ impl PaneRuntime {
                         warn!(
                             pane = pane_id.raw(),
                             err = %err,
-                            "failed to send OSC 52 clipboard write"
+                            "failed to queue OSC 52 clipboard write"
                         );
                     }
                 }
@@ -1428,290 +1458,8 @@ impl PaneRuntime {
         };
 
         // --- Detection task ---
-        let (detect_handle, detect_reset_notify, pending_release) = {
-            use crate::detect;
-            use std::time::{Duration, Instant};
-
-            const TICK_UNIDENTIFIED: Duration = Duration::from_millis(500);
-            const TICK_IDENTIFIED: Duration = Duration::from_millis(300);
-            const TICK_PENDING_RELEASE: Duration = Duration::from_millis(50);
-
-            let child_pid = child_pid.clone();
-            let terminal = terminal.clone();
-            let state_events = events.clone();
-            let render_notify = render_notify.clone();
-            let render_dirty = render_dirty.clone();
-            let detect_reset_notify = Arc::new(Notify::new());
-            let detect_reset = detect_reset_notify.clone();
-            let pending_release = Arc::new(Mutex::new(None));
-            let pending_release_for_task = pending_release.clone();
-
-            let handle = tokio::spawn(async move {
-                let mut agent_presence =
-                    AgentDetectionPresence::from_agent(initial_state.detected_agent);
-                let mut state = if initial_state.detected_agent.is_some() {
-                    AgentState::Idle
-                } else {
-                    AgentState::Unknown
-                };
-                let mut last_process_check = Instant::now();
-                let mut last_foreground_pgid = None;
-                let mut has_process_probe = false;
-                let mut acquisition_started_at = None;
-                let mut pending_foreground_shell_clear = false;
-                let mut foreground_shell_exit_reported = false;
-                let mut release_was_active = false;
-                let mut pending_restore_probe = initial_state.detected_agent.is_some();
-                let mut last_claude_working_at = None;
-                let mut last_visible_blocker = false;
-                let mut last_visible_idle = false;
-                let mut last_visible_working = false;
-                let mut last_visible_signal_refresh = None;
-
-                tokio::time::sleep(Duration::from_millis(50)).await;
-
-                loop {
-                    let tick = if active_pending_release(&pending_release_for_task, Instant::now())
-                        .is_some()
-                        || terminal.has_transient_default_color_override()
-                    {
-                        TICK_PENDING_RELEASE
-                    } else if agent_presence.current_agent().is_none() {
-                        TICK_UNIDENTIFIED
-                    } else {
-                        TICK_IDENTIFIED
-                    };
-                    tokio::select! {
-                        _ = tokio::time::sleep(tick) => {}
-                        _ = detect_reset.notified() => {
-                            agent_presence = AgentDetectionPresence::from_agent(None);
-                            state = AgentState::Unknown;
-                            last_foreground_pgid = None;
-                            has_process_probe = false;
-                            acquisition_started_at = None;
-                            pending_foreground_shell_clear = false;
-                            foreground_shell_exit_reported = false;
-                            release_was_active = false;
-                            pending_restore_probe = false;
-                            last_claude_working_at = None;
-                            last_visible_blocker = false;
-                            last_visible_idle = false;
-                            last_visible_working = false;
-                            last_visible_signal_refresh = None;
-                        }
-                    }
-
-                    let now = Instant::now();
-                    let suppressed_agent = active_pending_release(&pending_release_for_task, now);
-                    if suppressed_agent.is_none() && release_was_active {
-                        has_process_probe = false;
-                        acquisition_started_at = None;
-                    }
-                    release_was_active = suppressed_agent.is_some();
-                    let pid = child_pid.load(Ordering::Acquire);
-                    let content = terminal.detection_text();
-                    let foreground_pgid = (pid > 0)
-                        .then(|| detect::foreground_process_group_id(pid))
-                        .flatten();
-                    let process_group_changed =
-                        foreground_group_changed(foreground_pgid, last_foreground_pgid);
-                    let should_check_process = pid > 0
-                        && should_probe_foreground_job(ProcessProbeInput {
-                            current_agent: agent_presence.current_agent(),
-                            suppressed_agent,
-                            foreground_pgid,
-                            last_foreground_pgid,
-                            has_process_probe,
-                            acquisition_age: acquisition_started_at
-                                .map(|started| now.duration_since(started)),
-                            pending_foreground_shell_clear,
-                            pending_restore_probe,
-                            elapsed_since_process_check: now.duration_since(last_process_check),
-                        });
-
-                    let mut agent_changed = false;
-                    let mut agent = agent_presence.current_agent();
-                    if should_check_process {
-                        last_process_check = now;
-                        let had_process_probe = has_process_probe;
-                        has_process_probe = true;
-                        if pid > 0 {
-                            let probe = probe_foreground_process(pid, foreground_pgid);
-                            let process_name = probe.process_name;
-                            let process_group_id = probe.process_group_id;
-                            let foreground_is_pane_shell = probe.foreground_is_pane_shell;
-                            let mut new_agent = probe.agent;
-
-                            if let Some(suppressed_agent) = suppressed_agent {
-                                if new_agent == Some(suppressed_agent) {
-                                    new_agent = None;
-                                } else if let Ok(mut pending_release) =
-                                    pending_release_for_task.lock()
-                                {
-                                    *pending_release = None;
-                                }
-                            }
-
-                            let previous_agent = agent_presence.current_agent();
-                            let changed = match foreground_shell_agent_action(
-                                previous_agent,
-                                new_agent,
-                                foreground_is_pane_shell,
-                                foreground_shell_exit_reported,
-                            ) {
-                                ForegroundShellAgentAction::ReportProcessExit => {
-                                    pending_foreground_shell_clear = true;
-                                    false
-                                }
-                                ForegroundShellAgentAction::ClearAgent => {
-                                    pending_foreground_shell_clear = false;
-                                    foreground_shell_exit_reported = false;
-                                    agent_presence.clear_current_agent()
-                                }
-                                ForegroundShellAgentAction::ObserveProbe => {
-                                    pending_foreground_shell_clear = false;
-                                    foreground_shell_exit_reported = false;
-                                    agent_presence.observe_process_probe(new_agent)
-                                }
-                            };
-                            if new_agent.is_some() {
-                                last_foreground_pgid = process_group_id;
-                                acquisition_started_at = None;
-                                pending_restore_probe = false;
-                            } else if agent_presence.current_agent().is_none() {
-                                last_foreground_pgid = process_group_id.or(foreground_pgid);
-                                if had_process_probe && process_group_changed {
-                                    acquisition_started_at = Some(now);
-                                }
-                                pending_restore_probe = false;
-                            } else {
-                                last_foreground_pgid = process_group_id.or(foreground_pgid);
-                            }
-                            if changed {
-                                agent = agent_presence.current_agent();
-                                if let Some(process_name) = process_name {
-                                    info!(
-                                        pane = pane_id.raw(),
-                                        previous_agent = ?previous_agent,
-                                        ?agent,
-                                        process = %process_name,
-                                        pgid = ?process_group_id,
-                                        "agent changed"
-                                    );
-                                } else {
-                                    info!(
-                                        pane = pane_id.raw(),
-                                        previous_agent = ?previous_agent,
-                                        ?agent,
-                                        pgid = ?process_group_id,
-                                        "agent changed"
-                                    );
-                                }
-                                agent_changed = true;
-                            }
-                        }
-                    }
-
-                    let pid = child_pid.load(Ordering::Acquire);
-                    // Keep the terminal restore side effect separate from render notification state.
-                    #[allow(clippy::collapsible_if)]
-                    if pid > 0 && terminal.maybe_restore_host_terminal_theme(pane_id, pid) {
-                        if !render_dirty.swap(true, Ordering::AcqRel) {
-                            render_notify.notify_one();
-                        }
-                    }
-
-                    let process_exited = pending_foreground_shell_clear
-                        && agent.is_some()
-                        && !foreground_shell_exit_reported;
-                    let detection = if process_exited {
-                        detect::AgentDetection {
-                            state: AgentState::Idle,
-                            visible_blocker: false,
-                            visible_idle: false,
-                            visible_working: false,
-                        }
-                    } else {
-                        detect::detect_agent(agent, &content)
-                    };
-                    let raw_state = detection.state;
-                    let new_state = crate::terminal::state::stabilize_agent_detection(
-                        agent,
-                        state,
-                        detection,
-                        process_exited,
-                        now,
-                        &mut last_claude_working_at,
-                    );
-                    let visible_blocker =
-                        detection.visible_blocker && new_state == AgentState::Blocked;
-                    let visible_idle = detection.visible_idle && new_state == AgentState::Idle;
-                    let visible_working =
-                        detection.visible_working && new_state == AgentState::Working;
-
-                    let previous_publish = DetectionPublishState {
-                        state,
-                        visible_blocker: last_visible_blocker,
-                        visible_idle: last_visible_idle,
-                        visible_working: last_visible_working,
-                    };
-                    let next_publish = DetectionPublishState {
-                        state: new_state,
-                        visible_blocker,
-                        visible_idle,
-                        visible_working,
-                    };
-                    let stable_refresh_due = stable_visible_signal_refresh_due(
-                        previous_publish,
-                        next_publish,
-                        last_visible_signal_refresh,
-                        now,
-                    );
-
-                    if should_publish_detection_update(
-                        previous_publish,
-                        next_publish,
-                        agent_changed,
-                        process_exited,
-                        stable_refresh_due,
-                    ) {
-                        debug!(
-                            pane = pane_id.raw(),
-                            ?state,
-                            ?raw_state,
-                            ?new_state,
-                            ?agent,
-                            "state changed"
-                        );
-                        state = new_state;
-                        last_visible_blocker = visible_blocker;
-                        last_visible_idle = visible_idle;
-                        last_visible_working = visible_working;
-                        if visible_blocker || visible_idle || visible_working {
-                            last_visible_signal_refresh = Some(now);
-                        } else {
-                            last_visible_signal_refresh = None;
-                        }
-                        publish_state_changed_event(
-                            state_events.clone(),
-                            pane_id,
-                            agent,
-                            new_state,
-                            visible_blocker,
-                            visible_idle,
-                            visible_working,
-                            process_exited,
-                            now,
-                        )
-                        .await;
-                        if process_exited {
-                            foreground_shell_exit_reported = true;
-                        }
-                    }
-                }
-            });
-            (handle.abort_handle(), detect_reset_notify, pending_release)
-        };
+        let (detect_handle, detect_reset_notify, pending_release) =
+            spawn_basic_detection_task(pane_id, child_pid.clone(), terminal.clone(), events);
 
         Ok(Self {
             pane_id,
@@ -1723,9 +1471,10 @@ impl PaneRuntime {
             kitty_keyboard_flags,
             detect_reset_notify,
             pending_release,
-            preserve_processes_on_drop: false,
+            preserve_processes_on_drop: true,
             detect_handle,
         })
+        }
     }
 
     pub fn begin_graceful_release(&self, agent: Agent) {

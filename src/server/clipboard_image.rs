@@ -15,6 +15,7 @@ pub(crate) fn stage(
     extension: &str,
     data: &[u8],
 ) -> io::Result<StagedClipboardImage> {
+    #[cfg(unix)]
     use std::os::unix::fs::OpenOptionsExt;
 
     let extension = sanitize_extension(extension);
@@ -30,11 +31,11 @@ pub(crate) fn stage(
         let path = dir.join(format!(
             "client-{client_id}-clipboard-{unique}-{attempt}.{extension}"
         ));
-        let mut file = match fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&path)
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let mut file = match options.open(&path)
         {
             Ok(file) => file,
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
@@ -81,8 +82,6 @@ fn staging_dir() -> PathBuf {
 }
 
 fn ensure_staging_dir() -> io::Result<PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
-
     let dir = staging_dir();
     fs::create_dir_all(&dir)?;
     let metadata = fs::metadata(&dir)?;
@@ -92,7 +91,11 @@ fn ensure_staging_dir() -> io::Result<PathBuf> {
             dir.display()
         )));
     }
-    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+    }
     Ok(dir)
 }
 

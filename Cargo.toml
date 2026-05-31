@@ -29,3 +29,6 @@ toml = "0.8"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 unicode-width = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+uds_windows = "1"

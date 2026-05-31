@@ -95,6 +95,9 @@ fn run_player(path: &Path) -> Result<Output, String> {
             .arg(path)
             .output()
             .map_err(|e| format!("no audio player available: {e}"))
+    } else if cfg!(target_os = "windows") {
+        // No built-in mp3 player on Windows; silently no-op.
+        Err("audio playback not supported on Windows".to_string())
     } else {
         run_linux_player(path)
     }

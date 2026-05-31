@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{self, IsTerminal, Write as _};
-use std::os::unix::net::{UnixListener, UnixStream};
+use crate::ipc::compat::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -1466,12 +1466,19 @@ fn local_forward_socket_path(target: &str, session_name: &str) -> PathBuf {
     PathBuf::from("/tmp").join(short_name)
 }
 
+#[cfg(unix)]
 fn fits_unix_socket_path(path: &Path) -> bool {
     use std::os::unix::ffi::OsStrExt;
     // sun_path is byte-limited: 104 bytes on macOS, 108 on Linux. Reserve
     // 1 byte for the trailing NUL and use the smaller cap for portability.
     const MAX: usize = 103;
     path.as_os_str().as_bytes().len() <= MAX
+}
+
+#[cfg(windows)]
+fn fits_unix_socket_path(_path: &Path) -> bool {
+    // Windows named pipes are not constrained by sun_path length.
+    true
 }
 
 fn short_socket_hash(target: &str, session: &str) -> String {
@@ -1503,6 +1510,7 @@ fn sanitize_path_component(input: &str) -> String {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     #[test]
     fn bridge_socket_is_user_only() {
         use std::os::unix::fs::PermissionsExt;
@@ -2096,11 +2104,13 @@ mod tests {
         LOCK.get_or_init(|| std::sync::Mutex::new(()))
     }
 
+    #[cfg(unix)]
     fn socket_path_byte_len(path: &Path) -> usize {
         use std::os::unix::ffi::OsStrExt;
         path.as_os_str().as_bytes().len()
     }
 
+    #[cfg(unix)]
     #[test]
     fn local_forward_socket_path_uses_readable_name_when_it_fits() {
         let _guard = remote_env_lock().lock().unwrap();
@@ -2125,6 +2135,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn local_forward_socket_path_fits_in_sun_path() {
         let _guard = remote_env_lock().lock().unwrap();
@@ -2142,6 +2153,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn local_forward_socket_path_falls_back_to_tmp_when_dir_is_long() {
         let _guard = remote_env_lock().lock().unwrap();

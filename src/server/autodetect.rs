@@ -9,7 +9,8 @@
 //! (escape hatch for users who want the traditional single-process behavior).
 
 use std::io;
-use std::os::unix::net::UnixStream;
+use crate::ipc::compat::UnixStream;
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::path::PathBuf;
@@ -147,12 +148,15 @@ pub fn spawn_server_daemon() -> io::Result<u32> {
 
 fn build_server_daemon_command(exe: PathBuf) -> Command {
     let mut command = Command::new(&exe);
-    command
-        .arg("server")
+    command.arg("server");
+    #[cfg(unix)]
+    {
         // Create a new process group so the server survives the parent's exit
         // and doesn't receive SIGHUP when the client's terminal closes.
-        .process_group(0)
-        // Redirect stdio to /dev/null
+        command.process_group(0);
+    }
+    // Redirect stdio to /dev/null
+    command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
@@ -237,7 +241,7 @@ mod tests {
     use super::*;
     use std::ffi::OsStr;
     use std::io::{BufRead, BufReader, Write};
-    use std::os::unix::net::UnixListener;
+    use crate::ipc::compat::UnixListener;
     use std::sync::{Mutex, OnceLock};
 
     fn env_lock() -> &'static Mutex<()> {

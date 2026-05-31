@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io::{self, BufRead, BufReader, IsTerminal, Write};
-use std::os::unix::net::UnixStream;
+use crate::ipc::compat::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -2032,7 +2032,7 @@ fn platform_target() -> (&'static str, &'static str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::net::UnixListener;
+    use crate::ipc::compat::UnixListener;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
         Arc,

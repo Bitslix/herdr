@@ -1,5 +1,5 @@
 use std::io::{self, Read, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
+use crate::ipc::compat::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -576,6 +576,7 @@ fn error_response_json(id: String, code: &str, message: String) -> String {
 mod tests {
     use super::*;
     use std::io::{BufRead, BufReader};
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::sync::{Mutex, OnceLock};
     use tokio::sync::mpsc;
@@ -651,6 +652,7 @@ mod tests {
         std::env::remove_var("XDG_CONFIG_HOME");
     }
 
+    #[cfg(unix)]
     #[test]
     fn restrict_socket_permissions_sets_user_only_mode() {
         let dir = unique_test_path("socket-perms");

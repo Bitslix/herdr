@@ -1496,7 +1496,7 @@ mod tests {
 
     #[test]
     fn framing_over_unix_socketpair() {
-        use std::os::unix::net::UnixStream;
+        use crate::ipc::compat::UnixStream;
 
         let (mut a, mut b) = UnixStream::pair().expect("socketpair");
 
