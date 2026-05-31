@@ -34,3 +34,15 @@ pub(crate) struct ImportedHandoffRuntime {
     pub master_fd: std::os::fd::RawFd,
     pub state: HandoffRuntimeState,
 }
+
+#[cfg(not(unix))]
+#[derive(Debug)]
+pub(crate) struct ImportedHandoffRuntime {
+    _private: (),
+}
+
+#[cfg(not(unix))]
+#[derive(Debug, Clone)]
+pub(crate) struct HandoffRuntimeState {
+    _private: (),
+}

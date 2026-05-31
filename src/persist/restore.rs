@@ -352,6 +352,34 @@ fn restored_worktree_space_membership(
     })
 }
 
+#[cfg(unix)]
+fn restore_tab_handoff_runtime(
+    imported: crate::handoff_runtime::ImportedHandoffRuntime,
+    id: PaneId,
+    runtime_context: &RestoreRuntimeContext,
+) -> std::io::Result<TerminalRuntime> {
+    TerminalRuntime::from_handoff_fd(
+        crate::handoff_runtime::ImportedHandoffRuntime {
+            master_fd: imported.master_fd,
+            state: imported.state.with_pane_id(id),
+        },
+        runtime_context.scrollback_limit_bytes,
+        crate::terminal_theme::TerminalTheme::default(),
+        runtime_context.events.clone(),
+        runtime_context.render_notify.clone(),
+        runtime_context.render_dirty.clone(),
+    )
+}
+
+#[cfg(not(unix))]
+fn restore_tab_handoff_runtime(
+    _imported: crate::handoff_runtime::ImportedHandoffRuntime,
+    _id: PaneId,
+    _runtime_context: &RestoreRuntimeContext,
+) -> std::io::Result<TerminalRuntime> {
+    unreachable!("handoff is not supported on Windows")
+}
+
 fn restore_tab(
     snap: &TabSnapshot,
     history: Option<&TabHistorySnapshot>,
@@ -420,17 +448,7 @@ fn restore_tab(
         let was_imported = imported_runtime.is_some();
         let was_native_agent_restore = !was_imported && startup.restore_plan.is_some();
         let runtime_result = if let Some(imported) = imported_runtime {
-            TerminalRuntime::from_handoff_fd(
-                crate::handoff_runtime::ImportedHandoffRuntime {
-                    master_fd: imported.master_fd,
-                    state: imported.state.with_pane_id(*id),
-                },
-                runtime_context.scrollback_limit_bytes,
-                crate::terminal_theme::TerminalTheme::default(),
-                runtime_context.events.clone(),
-                runtime_context.render_notify.clone(),
-                runtime_context.render_dirty.clone(),
-            )
+            restore_tab_handoff_runtime(imported, *id, runtime_context)
         } else if let Some(plan) = startup.restore_plan {
             let launch = crate::agent_resume::AgentResumeLaunch {
                 plan: &plan,

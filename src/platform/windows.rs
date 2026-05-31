@@ -16,15 +16,36 @@ mod ffi {
     #[repr(C)]
     pub struct PROCESSENTRY32W {
         pub dw_size: u32,
-        cnt_usage: u32,
+        pub cnt_usage: u32,
         pub th32_process_id: u32,
-        th32_default_heap_id: usize,
-        th32_module_id: u32,
-        cnt_threads: u32,
+        pub th32_default_heap_id: usize,
+        pub th32_module_id: u32,
+        pub cnt_threads: u32,
         pub th32_parent_process_id: u32,
-        pc_pri_class_base: i32,
-        dw_flags: u32,
+        pub pc_pri_class_base: i32,
+        pub dw_flags: u32,
         pub sz_exe_file: [u16; super::MAX_PATH],
+    }
+
+    pub const CF_DIB: u32 = 8;
+    pub const BI_RGB: u32 = 0;
+    pub const BI_BITFIELDS: u32 = 3;
+    pub const GMEM_MOVEABLE: u32 = 0x0002;
+    pub const ERROR_ACCESS_DENIED: i32 = 5;
+
+    #[repr(C)]
+    pub struct BITMAPINFOHEADER {
+        pub bi_size: u32,
+        pub bi_width: i32,
+        pub bi_height: i32,
+        pub bi_planes: u16,
+        pub bi_bit_count: u16,
+        pub bi_compression: u32,
+        pub bi_size_image: u32,
+        pub bi_x_pels_per_meter: i32,
+        pub bi_y_pels_per_meter: i32,
+        pub bi_clr_used: u32,
+        pub bi_clr_important: u32,
     }
 
     extern "system" {
@@ -55,6 +76,17 @@ mod ffi {
             h_process: *mut std::ffi::c_void,
             u_exit_code: u32,
         ) -> i32;
+
+        pub fn OpenClipboard(h_wnd_new_owner: *mut std::ffi::c_void) -> i32;
+
+        pub fn GetClipboardData(u_format: u32) -> *mut std::ffi::c_void;
+
+        pub fn GlobalLock(h_mem: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+
+        pub fn GlobalUnlock(h_mem: *mut std::ffi::c_void) -> i32;
+
+        pub fn CloseClipboard() -> i32;
+
     }
 }
 
@@ -200,7 +232,7 @@ pub fn process_exists(pid: u32) -> bool {
         let handle = ffi::OpenProcess(ffi::PROCESS_QUERY_LIMITED_INFORMATION, ffi::FALSE, pid);
         if handle.is_null() {
             let err = std::io::Error::last_os_error();
-            return err.raw_os_error() == Some(5);
+            return err.raw_os_error() == Some(ffi::ERROR_ACCESS_DENIED);
         }
         ffi::CloseHandle(handle);
         true
@@ -237,22 +269,127 @@ pub fn open_url(url: &str) -> std::io::Result<()> {
 }
 
 pub fn read_clipboard_image() -> Option<ClipboardImage> {
-    None
+    let h_mem = unsafe {
+        if ffi::OpenClipboard(std::ptr::null_mut()) == 0 {
+            return None;
+        }
+        let handle = ffi::GetClipboardData(ffi::CF_DIB);
+        if handle.is_null() {
+            ffi::CloseClipboard();
+            return None;
+        }
+        handle
+    };
+
+    let result = unsafe {
+        let locked = ffi::GlobalLock(h_mem);
+        if locked.is_null() {
+            ffi::CloseClipboard();
+            return None;
+        }
+
+        let header = &*(locked as *const ffi::BITMAPINFOHEADER);
+        if header.bi_size < std::mem::size_of::<ffi::BITMAPINFOHEADER>() as u32
+            || header.bi_width <= 0
+            || header.bi_height == 0
+            || (header.bi_bit_count != 24 && header.bi_bit_count != 32)
+        {
+            ffi::GlobalUnlock(h_mem);
+            ffi::CloseClipboard();
+            return None;
+        }
+
+        let width = header.bi_width as u32;
+        let height = header.bi_height.unsigned_abs();
+        let bit_count = header.bi_bit_count;
+        let compression = header.bi_compression;
+
+        if compression != ffi::BI_RGB && compression != ffi::BI_BITFIELDS {
+            ffi::GlobalUnlock(h_mem);
+            ffi::CloseClipboard();
+            return None;
+        }
+
+        let palette_entries = if bit_count <= 8 {
+            1usize << bit_count
+        } else if compression == ffi::BI_BITFIELDS {
+            3
+        } else {
+            0
+        };
+        let header_end = std::mem::size_of::<ffi::BITMAPINFOHEADER>();
+        let pixel_offset = header_end + palette_entries * 4;
+
+        let row_size = ((width * bit_count as u32 + 31) / 32) * 4;
+        let total_pixels = row_size as usize * height as usize;
+        let pixel_src = std::slice::from_raw_parts(
+            (locked as *mut u8).add(pixel_offset),
+            total_pixels,
+        );
+
+        let bytes_per_pixel = (bit_count / 8) as usize;
+        let mut rgb_pixels = Vec::with_capacity((width * height * 3) as usize);
+
+        for y in 0..height {
+            let src_row = if header.bi_height > 0 {
+                (height - 1 - y) * row_size
+            } else {
+                y * row_size
+            };
+            let row_start = src_row as usize;
+            for x in 0..width {
+                let off = row_start + x as usize * bytes_per_pixel;
+                let b = pixel_src[off];
+                let g = pixel_src[off + 1];
+                let r = pixel_src[off + 2];
+                rgb_pixels.push(r);
+                rgb_pixels.push(g);
+                rgb_pixels.push(b);
+            }
+        }
+
+        ffi::GlobalUnlock(h_mem);
+        ffi::CloseClipboard();
+
+        (rgb_pixels, width, height)
+    };
+
+    let (pixels, width, height) = result;
+
+    let mut png_bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut png_bytes, width, height);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().ok()?;
+        writer.write_image_data(&pixels).ok()?;
+    }
+
+    Some(ClipboardImage {
+        bytes: png_bytes,
+        extension: "png",
+    })
 }
 
 pub fn show_desktop_notification(title: &str, body: Option<&str>) -> std::io::Result<bool> {
     let body = body.unwrap_or("");
     let mut child = Command::new("powershell")
         .args(["-NoProfile", "-Command", &format!(
-            "$t = [Console]::In.ReadLine(); \
+            "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; \
+             $t = [Console]::In.ReadLine(); \
              $b = [Console]::In.ReadLine(); \
-             $xml = New-Object Windows.Data.Xml.Dom.XmlDocument; \
-             $xml.LoadXml('<toast><visual><binding template=\"ToastText02\"><text id=\"1\"></text><text id=\"2\"></text></binding></visual></toast>'); \
-             $texts = $xml.GetElementsByTagName('text'); \
-             $texts.Item(0).AppendChild($xml.CreateTextNode($t)) | Out-Null; \
-             $texts.Item(1).AppendChild($xml.CreateTextNode($b)) | Out-Null; \
-             $toast = New-Object Windows.UI.Notifications.ToastNotification $xml; \
-             [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Herdr').Show($toast)"
+             try {{ \
+               [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; \
+               $xml = New-Object Windows.Data.Xml.Dom.XmlDocument; \
+               $xml.LoadXml('<toast><visual><binding template=\"ToastText02\"><text id=\"1\"></text><text id=\"2\"></text></binding></visual></toast>'); \
+               $texts = $xml.GetElementsByTagName('text'); \
+               $texts.Item(0).AppendChild($xml.CreateTextNode($t)) | Out-Null; \
+               $texts.Item(1).AppendChild($xml.CreateTextNode($b)) | Out-Null; \
+               $toast = New-Object Windows.UI.Notifications.ToastNotification $xml; \
+               [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Herdr').Show($toast) \
+             }} catch {{ \
+               (New-Object -ComObject WScript.Shell).Popup(\"$t`n$b\", 0, \"Herdr\", 0) | Out-Null \
+             }}"
         )])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())

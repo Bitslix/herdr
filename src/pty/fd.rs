@@ -108,6 +108,22 @@ pub(crate) fn resize_pty_fd(
     Ok(())
 }
 
+#[cfg(windows)]
+pub(crate) fn set_cloexec() -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "set_cloexec not supported on Windows",
+    ))
+}
+
+#[cfg(windows)]
+pub(crate) fn set_nonblocking() -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "set_nonblocking not supported on Windows",
+    ))
+}
+
 // Windows stubs — allow compilation, return unsupported errors at runtime.
 #[cfg(windows)]
 pub(crate) fn duplicate_fd() -> std::io::Result<std::os::windows::io::RawHandle> {

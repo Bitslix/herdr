@@ -11,10 +11,11 @@ use std::os::unix::fs::MetadataExt;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-#[cfg(unix)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct SocketFileIdentity {
+    #[cfg(unix)]
     dev: u64,
+    #[cfg(unix)]
     ino: u64,
 }
 
@@ -64,10 +65,7 @@ pub(crate) fn socket_file_identity(path: &Path) -> io::Result<SocketFileIdentity
 
 #[cfg(not(unix))]
 pub(crate) fn socket_file_identity(_path: &Path) -> io::Result<SocketFileIdentity> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "socket file identity is not supported on this platform",
-    ))
+    Ok(SocketFileIdentity {})
 }
 
 #[cfg(unix)]
